@@ -13,9 +13,13 @@ from .run import load_queries
 POOL_DEPTH = 20  # judged depth per engine; deeper pools make recall@100 less biased
 QRELS = config.JUDGMENTS / "qrels.jsonl"
 
-PROMPT = """You grade search results for a Dutch job-search engine.
+PROMPT = """You judge the results of a Dutch job search engine. Someone typed the search below
+into a job site. Decide whether this job posting is the kind of job they were looking for.
 
-Search query: {query}
+Search syntax: all words should apply; "quoted words" are an exact phrase; A OR B means
+either; -word means they do NOT want that.
+
+Search: {query}
 {filters}
 Job posting
 Title: {title}
@@ -23,12 +27,16 @@ City: {city}
 Text (truncated):
 {text}
 
-How well does this posting match what the searcher is looking for?
-2 = clearly relevant: this is the kind of job the query asks for (right role or skill; right place if one is named)
-1 = partly relevant: related role, or the right role but a mismatch on a stated detail
-0 = not relevant: the query words appear but the job is something else
+Grades:
+2 = good match: the job itself is what the search asks for (the role, or a role where the
+    searched skills are central; the place too, if the search names one).
+1 = partial match: a related role, the searched skill is only a minor or optional part,
+    or a detail named in the search (place, hours, level) does not fit.
+0 = no match: the search words only appear in passing (company description, other
+    vacancies, recruiter or benefits text), or this is a different kind of job.
 
-Answer with one digit only."""
+First write one short sentence saying what this job is. Then, on the last line, write
+"Grade: " followed by 0, 1 or 2."""
 
 
 def load_qrels() -> dict[tuple[str, str], int]:
@@ -65,17 +73,22 @@ def grade(client: httpx.Client, q: dict, doc: dict) -> int:
     prompt = PROMPT.format(query=q["text"], filters=filters, title=doc["title"],
                            city=doc["city"] or "-", text=doc["text"][:2500])
     r = client.post("/chat/completions", json={
-        "model": config.JUDGE_MODEL, "temperature": 0, "max_tokens": 4,
+        "model": config.JUDGE_MODEL, "temperature": 0, "max_tokens": 120,
         "messages": [{"role": "user", "content": prompt}],
         "chat_template_kwargs": {"enable_thinking": False}})
     r.raise_for_status()
-    m = re.search(r"[012]", r.json()["choices"][0]["message"]["content"])
+    content = r.json()["choices"][0]["message"]["content"]
+    m = re.findall(r"Grade:\s*\**\s*([012])", content)
     if not m:
-        raise ValueError(f"unparseable grade: {r.json()['choices'][0]['message']['content']!r}")
-    return int(m.group())
+        raise ValueError(f"unparseable grade: {content!r}")
+    return int(m[-1])
 
 
-def judge(subset: str, limit: int | None = None) -> int:
+def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
+    """Grade every pooled pair that has no grade yet. Grades are appended as they arrive,
+    so an interrupted run resumes where it stopped."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     queries = {q["qid"]: q for q in load_queries()}
     done = load_qrels()
     todo = [(qid, i) for qid, ids in sorted(pool(subset).items()) for i in sorted(ids)
@@ -83,13 +96,22 @@ def judge(subset: str, limit: int | None = None) -> int:
     todo = todo[:limit] if limit else todo
     docs = _docs({i for _, i in todo})
     QRELS.parent.mkdir(parents=True, exist_ok=True)
-    with httpx.Client(base_url=config.JUDGE_URL, timeout=120) as client, QRELS.open("a") as f:
-        for n, (qid, i) in enumerate(todo, 1):
-            g = grade(client, queries[qid], docs[i])
-            f.write(json.dumps({"qid": qid, "id": i, "grade": g, "by": config.JUDGE_MODEL}) + "\n")
-            f.flush()
+    lock = threading.Lock()
+    # JUDGE_URL may list several servers (comma-separated); requests alternate between them.
+    clients = [httpx.Client(base_url=u.strip(), timeout=300) for u in config.JUDGE_URL.split(",")]
+    with QRELS.open("a") as f, ThreadPoolExecutor(workers) as ex:
+        futures = {ex.submit(grade, clients[n % len(clients)], queries[qid], docs[i]): (qid, i)
+                   for n, (qid, i) in enumerate(todo)}
+        for n, fut in enumerate(as_completed(futures), 1):
+            qid, i = futures[fut]
+            g = fut.result()
+            with lock:
+                f.write(json.dumps({"qid": qid, "id": i, "grade": g, "by": config.JUDGE_MODEL}) + "\n")
+                f.flush()
             if n % 100 == 0:
-                print(f"  graded {n}/{len(todo)}")
+                print(f"  graded {n}/{len(todo)}", flush=True)
+    for c in clients:
+        c.close()
     return len(todo)
 
 

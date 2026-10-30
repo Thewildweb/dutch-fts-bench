@@ -34,6 +34,7 @@ def main() -> None:
     s.add_argument("--writes", type=float, help="copy N docs/s during the run (needs --rate)")
     s = sub.add_parser("judge", help="LLM-grade the pooled top-20s")
     s.add_argument("--limit", type=int)
+    s.add_argument("--workers", type=int, default=1, help="parallel requests to the grader")
     s = sub.add_parser("calibrate", help="print graded pairs for a human check")
     s.add_argument("-n", type=int, default=20)
     sub.add_parser("eval", help="nDCG@10 / recall@100, appended to results/relevance.csv")
@@ -61,7 +62,7 @@ def main() -> None:
                                  a.profile, a.facets, a.rate, a.zipf, a.cache, a.writes):
                 print(r)
     elif a.cmd == "judge":
-        print("graded", judge.judge(a.subset, a.limit))
+        print("graded", judge.judge(a.subset, a.limit, a.workers))
     elif a.cmd == "calibrate":
         print(judge.calibration_sample(a.n))
     elif a.cmd == "eval":
