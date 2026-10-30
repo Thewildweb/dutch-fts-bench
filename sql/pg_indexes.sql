@@ -38,7 +38,9 @@ CREATE INDEX IF NOT EXISTS {table}_bm25 ON {table} USING bm25 (
     ((CASE WHEN lang = 'nl' THEN job_text END)::pdb.simple('stemmer=dutch', 'stopwords_language=dutch', 'alias=text_nl')),
     ((CASE WHEN lang = 'en' THEN job_text END)::pdb.simple('stemmer=english', 'stopwords_language=english', 'alias=text_en')),
     ((CASE WHEN lang NOT IN ('nl', 'en') THEN job_text END)::pdb.simple('alias=text_xx')),
-    lang, city, last_seen
+    -- literal = untokenized and stored column-wise ("fast"), so city facets can be
+    -- counted from the index; as plain text they made pg_search read every matching row.
+    (lang::pdb.literal), (city::pdb.literal), last_seen
 );
 
 -- @arm textsearch
