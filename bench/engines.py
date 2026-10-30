@@ -278,6 +278,7 @@ class Elastic(Engine):
     measure engine work rather than the shard request cache; cache=True is the default
     behaviour."""
     name = "elasticsearch"
+    TYPE = "best_fields"  # score = best single field (title or body)
     FIELDS = [f"title_{l}^{TITLE_BOOST}" for l in ("nl", "en", "xx")] + \
              [f"text_{l}" for l in ("nl", "en", "xx")]
 
@@ -294,7 +295,7 @@ class Elastic(Engine):
 
     def _clause(self, c: Clause) -> dict:
         return {"multi_match": {"query": c.text, "fields": self.FIELDS,
-                                "type": "phrase" if c.phrase else "best_fields",
+                                "type": "phrase" if c.phrase else self.TYPE,
                                 "operator": "and"}}
 
     def _query(self, q: Query, filters: dict) -> dict:
@@ -343,5 +344,12 @@ class Elastic(Engine):
         return [(b["key"], b["doc_count"]) for b in self._search(body)["aggregations"]["city"]["buckets"]]
 
 
+class ElasticMostFields(Elastic):
+    """Per term, sums the title and body scores (as pg_search's OR over fields does)
+    instead of taking the best field."""
+    name = "elasticsearch-mostfields"
+    TYPE = "most_fields"
+
+
 ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgSearchNoBoost,
-                                PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, Elastic)}
+                                PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, Elastic, ElasticMostFields)}
