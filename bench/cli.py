@@ -38,6 +38,12 @@ def main() -> None:
     s = sub.add_parser("calibrate", help="print graded pairs for a human check")
     s.add_argument("-n", type=int, default=20)
     sub.add_parser("eval", help="nDCG@10 / recall@100, appended to results/relevance.csv")
+    s = sub.add_parser("memory", help="RAM per arm (needs Docker), to results/memory.csv")
+    s.add_argument("mode", choices=["working-set", "squeeze", "heap"])
+    s.add_argument("engine", choices=list(ENGINES))
+    s.add_argument("--sizes", nargs="+", default=[],
+                   help="squeeze: container limits (e.g. 1g 2g 4g); heap: JVM heaps (e.g. 512m 1g)")
+    s.add_argument("--no-facets", action="store_true")
 
     a = p.parse_args()
     if a.cmd == "verify":
@@ -65,6 +71,13 @@ def main() -> None:
         print("graded", judge.judge(a.subset, a.limit, a.workers))
     elif a.cmd == "calibrate":
         print(judge.calibration_sample(a.n))
+    elif a.cmd == "memory":
+        from . import memory
+        facets = not a.no_facets
+        if a.mode == "working-set":
+            memory.working_set(a.engine, a.subset, facets)
+        else:
+            getattr(memory, a.mode)(a.engine, a.subset, a.sizes, facets)
     elif a.cmd == "eval":
         for r in evaluate.evaluate(a.subset):
             if not r["group"].startswith("tag:"):

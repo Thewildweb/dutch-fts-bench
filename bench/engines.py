@@ -203,12 +203,22 @@ class PgSearch(_Pg):
     def _where(self, q):
         return "id @@@ pdb.parse(%s)", [to_tantivy(q, self.FIELDS)]
 
+    # Score only: an extra sort key such as id (a tie-breaker) stops pg_search from using its
+    # Top-K scan; it then fetches every matching row from the table and sorts them.
+    ORDER = "pdb.score(id) DESC"
+
     def _rows(self, q, filters, k):
         where, args = self._where(q)
         fsql, fargs = self._filters(filters)
-        sql = (f"SELECT id FROM {self.table} WHERE {where} AND {fsql} "
-               f"ORDER BY pdb.score(id) DESC, id LIMIT {k}")
+        sql = f"SELECT id FROM {self.table} WHERE {where} AND {fsql} ORDER BY {self.ORDER} LIMIT {k}"
         return sql, args + fargs
+
+
+class PgSearchTiebreak(PgSearch):
+    """Same, with id as tie-breaker (deterministic order, as the other arms have): shows the
+    cost of losing the Top-K scan."""
+    name = "pg-search-tiebreak"
+    ORDER = "pdb.score(id) DESC, id"
 
 
 class PgSearchNoBoost(PgSearch):
@@ -351,5 +361,5 @@ class ElasticMostFields(Elastic):
     TYPE = "most_fields"
 
 
-ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgSearchNoBoost,
+ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgSearchTiebreak, PgSearchNoBoost,
                                 PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, Elastic, ElasticMostFields)}

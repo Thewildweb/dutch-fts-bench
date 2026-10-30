@@ -66,12 +66,14 @@ uv run bench --subset full eval
 | `pg-trgm` | `postgres` | `trgm` | same SQL, trigram GIN indexes |
 | `pg-fts` | `postgres` | `fts` | tsvector + GIN, `ts_rank_cd` |
 | `pg-fts-norm` | `postgres` | `fts` | ranking divided by 1 + log(doc length) |
-| `pg-search` | `postgres` | `bm25` | ParadeDB BM25 |
+| `pg-search` | `postgres` | `bm25` | ParadeDB BM25, ordered by score only (Top-K scan) |
+| `pg-search-tiebreak` | `postgres` | `bm25` | `ORDER BY score, id`: loses the Top-K scan, fetches every match |
 | `pg-search-noboost` | `postgres` | `bm25` | same index, no title boost |
 | `pg-textsearch` | `pg-textsearch` | `tsv`, `textsearch` | Tiger Data BM25; AND/phrase via the tsv column |
 | `pg-textsearch-tuned` | `pg-textsearch` | same | `enable_sort = off` (see `bench/engines.py`) |
 | `pg-textsearch-title` | `pg-textsearch` | `tsv`, `textsearch_title` | title indexed twice (no field weights in pg_textsearch) |
-| `elasticsearch` | `elasticsearch` | `load es` | |
+| `elasticsearch` | `elasticsearch` | `load es` | `best_fields`: per term, the better of title and body |
+| `elasticsearch-mostfields` | `elasticsearch` | `load es` | `most_fields`: per term, title + body scores summed |
 
 Stemming and stopwords are the same everywhere: Postgres `dutch`/`english` snowball configs,
 the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` analyzers.
@@ -89,7 +91,24 @@ the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` a
 - Cold runs: `scripts/cold-run.sh full postgres pg-search` restarts the container with an empty
   OS page cache and runs each query once (needs a sudoers rule for `drop_caches`, see the script).
 
-Results are appended to `results/index.csv`, `results/latency.csv` and `results/relevance.csv`,
+### Memory
+
+Runs on the benchmark host and drives Docker itself (stops and starts the containers):
+
+```sh
+# Working set: start with nothing cached, run the queries, record what is in shared_buffers
+# and the OS page cache per relation / Lucene file type, plus the container's memory.
+uv run bench --subset full memory working-set pg-search
+# Squeeze: rerun latency under container limits (shared_buffers 1/4, ES heap 1/2 of it)
+uv run bench --subset full memory squeeze pg-search --sizes 1g 2g 4g
+# Elasticsearch heap size at the default container limit
+uv run bench --subset full memory heap elasticsearch-mostfields --sizes 512m 1g 2g 4g
+```
+
+Page-cache residency comes from `scripts/pagecache.py` (mincore), run in a throwaway
+container with the data volume mounted read-only.
+
+Results are appended to `results/index.csv`, `results/latency.csv`, `results/memory.csv` and `results/relevance.csv`,
 tagged with host and timestamp.
 
 ## Layout
