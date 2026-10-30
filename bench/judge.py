@@ -98,13 +98,20 @@ def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
     QRELS.parent.mkdir(parents=True, exist_ok=True)
     lock = threading.Lock()
     # JUDGE_URL may list several servers (comma-separated); requests alternate between them.
-    clients = [httpx.Client(base_url=u.strip(), timeout=300) for u in config.JUDGE_URL.split(",")]
+    clients = [httpx.Client(base_url=u.strip(), timeout=httpx.Timeout(180, connect=10))
+               for u in config.JUDGE_URL.split(",")]
     with QRELS.open("a") as f, ThreadPoolExecutor(workers) as ex:
         futures = {ex.submit(grade, clients[n % len(clients)], queries[qid], docs[i]): (qid, i)
                    for n, (qid, i) in enumerate(todo)}
+        failed = 0
         for n, fut in enumerate(as_completed(futures), 1):
             qid, i = futures[fut]
-            g = fut.result()
+            try:
+                g = fut.result()
+            except Exception as exc:  # left ungraded; the next run retries it
+                failed += 1
+                print(f"  failed {qid} {i}: {exc!r}"[:200], flush=True)
+                continue
             with lock:
                 f.write(json.dumps({"qid": qid, "id": i, "grade": g, "by": config.JUDGE_MODEL}) + "\n")
                 f.flush()
@@ -112,7 +119,9 @@ def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
                 print(f"  graded {n}/{len(todo)}", flush=True)
     for c in clients:
         c.close()
-    return len(todo)
+    if failed:
+        print(f"  {failed} pairs failed; run judge again to retry them", flush=True)
+    return len(todo) - failed
 
 
 def calibration_sample(n: int = 20, seed: int = 7) -> str:
