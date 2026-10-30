@@ -30,7 +30,7 @@ def main() -> None:
     s.add_argument("--facets", action="store_true", help="time the city facet count instead")
     s.add_argument("--rate", type=float, help="open loop: queries per second (default: closed loop)")
     s.add_argument("--zipf", type=float, help="skewed query popularity, e.g. 1.0 (default: uniform)")
-    s.add_argument("--cache", action="store_true", help="allow engine result caches (ES request cache)")
+    s.add_argument("--cache", action="store_true", help="engine default caching (ES shard request cache for counts/facets)")
     s.add_argument("--writes", type=float, help="copy N docs/s during the run (needs --rate)")
     s = sub.add_parser("judge", help="LLM-grade the pooled top-20s")
     s.add_argument("--limit", type=int)

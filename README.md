@@ -81,8 +81,8 @@ the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` a
 
 - default: closed loop, one OS process per client (`--concurrency 1 4 16`).
 - `--rate 200`: open loop at a fixed rate; queueing delay counts, so stalls show in p99.
-- `--cache`: allow the Elasticsearch shard request cache (off by default, so repeated
-  size-0 requests measure engine work). `--zipf 1.0`: skewed query popularity, for cache runs.
+- `--cache`: Elasticsearch's default caching (the shard request cache serves counts and
+  facets). Without it, requests send `request_cache=false`, so repeats measure engine work. `--zipf 1.0`: skewed query popularity, for cache runs.
 - `--writes 20` (with `--rate`): copy 20 random documents per second under new ids during
   the run, so refreshes invalidate caches as they would with live data. Copies are removed afterwards.
 - `--facets`: time a city facet count instead of a top-k search.

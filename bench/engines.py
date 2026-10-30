@@ -271,7 +271,8 @@ class PgTextsearchTitle(PgTextsearchTuned):
 
 class Elastic(Engine):
     """cache=False sends request_cache=false, so repeated size:0 requests (counts, facets)
-    measure engine work rather than the shard request cache."""
+    measure engine work rather than the shard request cache; cache=True is the default
+    behaviour."""
     name = "elasticsearch"
     FIELDS = [f"title_{l}^{TITLE_BOOST}" for l in ("nl", "en", "xx")] + \
              [f"text_{l}" for l in ("nl", "en", "xx")]
@@ -280,7 +281,9 @@ class Elastic(Engine):
         super().__init__(subset, cache)
         self.index = self.table
         self.http = httpx.Client(base_url=config.ES_URL, timeout=60)
-        self.params = {"request_cache": "true" if cache else "false"}
+        # cache=True: Elasticsearch's default (the shard request cache serves size:0 requests
+        # such as counts and facets, not hit lists). cache=False: request_cache=false.
+        self.params = {} if cache else {"request_cache": "false"}
 
     def close(self) -> None:
         self.http.close()
