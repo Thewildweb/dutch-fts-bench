@@ -31,6 +31,7 @@ def main() -> None:
     s.add_argument("--rate", type=float, help="open loop: queries per second (default: closed loop)")
     s.add_argument("--zipf", type=float, help="skewed query popularity, e.g. 1.0 (default: uniform)")
     s.add_argument("--cache", action="store_true", help="allow engine result caches (ES request cache)")
+    s.add_argument("--writes", type=float, help="copy N docs/s during the run (needs --rate)")
     s = sub.add_parser("judge", help="LLM-grade the pooled top-20s")
     s.add_argument("--limit", type=int)
     s = sub.add_parser("calibrate", help="print graded pairs for a human check")
@@ -57,7 +58,7 @@ def main() -> None:
     elif a.cmd == "latency":
         for c in a.concurrency:
             for r in run.latency(a.engine, a.subset, a.k, c, a.repeats, a.label,
-                                 a.profile, a.facets, a.rate, a.zipf, a.cache):
+                                 a.profile, a.facets, a.rate, a.zipf, a.cache, a.writes):
                 print(r)
     elif a.cmd == "judge":
         print("graded", judge.judge(a.subset, a.limit))

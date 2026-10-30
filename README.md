@@ -81,6 +81,8 @@ the same stemmer + stopword list in pg_search and pg_tokenizer, Elasticsearch `d
 - `--rate 200`: open loop at a fixed rate; queueing delay counts, so stalls show in p99.
 - `--cache`: allow the Elasticsearch shard request cache (off by default, so repeated
   size-0 requests measure engine work). `--zipf 1.0`: skewed query popularity, for cache runs.
+- `--writes 20` (with `--rate`): copy 20 random documents per second under new ids during
+  the run, so refreshes invalidate caches as they would with live data. Copies are removed afterwards.
 - `--facets`: time a city facet count instead of a top-k search.
 - Cold runs: restart the engine, drop the OS page cache, run with `--repeats 1 --label cold`.
 

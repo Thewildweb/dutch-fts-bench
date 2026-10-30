@@ -86,6 +86,29 @@ def _worker(args) -> tuple[list[float], list[str], float, float]:
     return lat, errors, first, end
 
 
+def _writer(args) -> int:
+    """Copy random documents under new ids at `rate` per second until `stop_at`."""
+    engine, subset, rate, t0, stop_at = args
+    import duckdb
+    con = duckdb.connect()
+    con.execute("SET enable_progress_bar = false")
+    limit = config.SUBSETS[subset]
+    sql = "SELECT id FROM read_parquet(?) ORDER BY md5(id)" + (f" LIMIT {limit}" if limit else "")
+    ids = [r[0] for r in con.sql(sql, params=[str(config.DATASET_PATH)]).fetchall()]
+    rnd = random.Random(7)
+    e = ENGINES[engine](subset)
+    n, next_at = 0, t0  # start with the queries, not during the start-up head start
+    while next_at < stop_at:
+        delay = next_at - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
+        e.write_copy(rnd.choice(ids), f"w-{int(t0)}-{n}")
+        n += 1
+        next_at += 1 / rate
+    e.close()
+    return n
+
+
 def _jobs(qs: list[dict], repeats: int, zipf: float | None, seed: int = 42) -> list[dict]:
     rnd = random.Random(seed)
     if zipf:
@@ -101,7 +124,12 @@ def _jobs(qs: list[dict], repeats: int, zipf: float | None, seed: int = 42) -> l
 
 def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, label: str,
             profile: str | None = None, facets: bool = False, rate: float | None = None,
-            zipf: float | None = None, cache: bool = False) -> list[dict]:
+            zipf: float | None = None, cache: bool = False,
+            writes: float | None = None) -> list[dict]:
+    """writes: documents copied per second during the run (needs --rate, so the run length
+    is known); copies are removed afterwards."""
+    if writes and not rate:
+        raise SystemExit("--writes needs --rate, so the run has a known length")
     rows = []
     probe = ENGINES[engine](subset)
     for prof in ([profile] if profile else ["website", "recruiter"]):
@@ -115,15 +143,25 @@ def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, la
         # perf_counter is system-wide on Linux and macOS, so t0 is valid in child processes.
         parts = [(engine, subset, cache, k, facets, jobs[i::concurrency], t0, interval)
                  for i in range(concurrency)]
-        with mp.get_context("spawn").Pool(concurrency) as pool:
+        with mp.get_context("spawn").Pool(concurrency + (1 if writes else 0)) as pool:
+            writer = None
+            if writes:
+                stop_at = t0 + len(jobs) * interval
+                writer = pool.apply_async(_writer, [(engine, subset, writes, t0, stop_at)])
             out = pool.map(_worker, parts)
+            written = writer.get() if writer else 0
+        if writes:
+            cleanup = ENGINES[engine](subset)
+            cleanup.remove_copies()
+            cleanup.close()
         wall = max(o[3] for o in out) - min(o[2] for o in out)
         lat = [x for o in out for x in o[0]]
         errors = [x for o in out for x in o[1]]
         row = {"engine": engine, "subset": subset, "profile": prof,
                "op": "facet_city" if facets else f"top{k}", "concurrency": concurrency,
                "mode": f"open@{rate}/s" if rate else "closed",
-               "zipf": zipf or "", "cache": cache, "label": label,
+               "zipf": zipf or "", "cache": cache, "writes_per_s": writes or "",
+               "written": written if writes else "", "label": label,
                "n": len(lat), "errors": len(errors), "skipped_queries": skipped,
                "p50_ms": round(_pct(lat, 50), 2), "p95_ms": round(_pct(lat, 95), 2),
                "p99_ms": round(_pct(lat, 99), 2), "max_ms": round(max(lat), 2),

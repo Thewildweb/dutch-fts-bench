@@ -38,6 +38,14 @@ class Engine:
     def facet_city(self, q: Query, filters: dict, n: int = 10) -> list[tuple[str, int]]:
         raise NotImplementedError
 
+    # Write load for cache runs: copy an existing document under a new id ("w-..."), then
+    # remove all copies afterwards so the next run sees the original dataset.
+    def write_copy(self, src_id: str, new_id: str) -> None:
+        raise NotImplementedError
+
+    def remove_copies(self) -> int:
+        raise NotImplementedError
+
     def close(self) -> None:
         pass
 
@@ -85,6 +93,18 @@ class _Pg(Engine):
         sql = (f"SELECT city, count(*) FROM {self.table} WHERE {where} AND {fsql} AND city <> '' "
                f"GROUP BY city ORDER BY 2 DESC LIMIT {n}")
         return [tuple(r) for r in self.conn.execute(sql, args + fargs)]
+
+    _COLS = ("url, domain, title, lang, job_text, text_length, word_count, city, "
+             "first_seen, last_seen")
+
+    def write_copy(self, src_id, new_id):
+        # Generated columns (tsv, doc_*) and trigger-filled token columns update themselves.
+        self.conn.execute(f"INSERT INTO {self.table} (id, {self._COLS}) "
+                          f"SELECT %s, {self._COLS} FROM {self.table} WHERE id = %s",
+                          [new_id, src_id])
+
+    def remove_copies(self):
+        return self.conn.execute(f"DELETE FROM {self.table} WHERE id LIKE 'w-%%'").rowcount
 
 
 class PgIlike(_Pg):
@@ -308,6 +328,19 @@ class Elastic(Engine):
     def count(self, q, filters):
         body = {"query": self._query(q, filters), "size": 0, "track_total_hits": True}
         return self._search(body)["hits"]["total"]["value"]
+
+    def write_copy(self, src_id, new_id):
+        doc = self.http.get(f"/{self.index}/_doc/{src_id}").json()["_source"]
+        doc["id"] = new_id
+        self.http.put(f"/{self.index}/_doc/{new_id}", json=doc).raise_for_status()
+
+    def remove_copies(self):
+        # Refresh first: copies written in the last second aren't searchable yet.
+        self.http.post(f"/{self.index}/_refresh").raise_for_status()
+        r = self.http.post(f"/{self.index}/_delete_by_query", params={"refresh": "true"},
+                           json={"query": {"prefix": {"id": "w-"}}}, timeout=600)
+        r.raise_for_status()
+        return r.json()["deleted"]
 
     def facet_city(self, q, filters, n=10):
         body = {"query": self._query(q, filters), "size": 0, "track_total_hits": False,
