@@ -1,6 +1,8 @@
 """Search arms. Every arm takes the same parsed Query and filters and returns ids, best first.
 
 filters: {"lang": "nl", "city": "Utrecht", "since": "2026-09-01"} (all optional).
+An arm that can't run a query type says so in `unsupported()`; such queries are skipped and
+reported, never silently simplified.
 """
 import httpx
 import psycopg
@@ -9,16 +11,28 @@ from . import config
 from .query import Clause, Query, to_tantivy, to_tsquery_sql
 
 TITLE_BOOST = 2.0
+LANGS = (("nl", "dutch"), ("en", "english"), (None, "simple"))  # None = every other lang
+
+
+def lang_cond(lang: str | None) -> str:
+    return f"lang = '{lang}'" if lang else "lang NOT IN ('nl', 'en')"
 
 
 class Engine:
     name = "base"
 
-    def __init__(self, subset: str):
+    def __init__(self, subset: str, cache: bool = False):
         self.subset = subset
         self.table = config.table_name(subset)
+        self.cache = cache
+
+    def unsupported(self, q: Query, filters: dict) -> str | None:
+        return None
 
     def search(self, q: Query, filters: dict, k: int) -> list[str]:
+        raise NotImplementedError
+
+    def count(self, q: Query, filters: dict) -> int:
         raise NotImplementedError
 
     def facet_city(self, q: Query, filters: dict, n: int = 10) -> list[tuple[str, int]]:
@@ -31,8 +45,8 @@ class Engine:
 # ---------------------------------------------------------------- Postgres
 
 class _Pg(Engine):
-    def __init__(self, subset: str):
-        super().__init__(subset)
+    def __init__(self, subset: str, cache: bool = False):
+        super().__init__(subset, cache)
         self.conn = psycopg.connect(config.PG_DSN, autocommit=True)
 
     def close(self) -> None:
@@ -59,6 +73,12 @@ class _Pg(Engine):
         sql, args = self._rows(q, filters, k)
         return [r[0] for r in self.conn.execute(sql, args)]
 
+    def count(self, q, filters):
+        where, args = self._where(q)
+        fsql, fargs = self._filters(filters)
+        return self.conn.execute(f"SELECT count(*) FROM {self.table} WHERE {where} AND {fsql}",
+                                 args + fargs).fetchone()[0]
+
     def facet_city(self, q, filters, n=10):
         where, args = self._where(q)
         fsql, fargs = self._filters(filters)
@@ -74,8 +94,8 @@ class PgIlike(_Pg):
     name = "pg-ilike"
     use_indexes = False  # plain ILIKE = sequential scan, even when the trgm indexes exist
 
-    def __init__(self, subset: str):
-        super().__init__(subset)
+    def __init__(self, subset: str, cache: bool = False):
+        super().__init__(subset, cache)
         if not self.use_indexes:
             self.conn.execute("SET enable_bitmapscan = off")
             self.conn.execute("SET enable_indexscan = off")
@@ -114,17 +134,18 @@ class PgTrgm(PgIlike):
 class PgFts(_Pg):
     """Built-in full-text search: tsvector per document language, GIN index, ts_rank_cd."""
     name = "pg-fts"
-    CONFIGS = (("nl", "dutch"), ("en", "english"), (None, "simple"))
+    # ts_rank_cd normalization flags; 0 = default (no length normalization).
+    normalization = 0
 
     def _tsq(self, q: Query) -> dict[str, tuple[str, list]]:
-        return {cfg: to_tsquery_sql(q, cfg) for _, cfg in self.CONFIGS}
+        return {cfg: to_tsquery_sql(q, cfg) for _, cfg in LANGS}
 
     def _where(self, q):
         parts, args = [], []
-        for lang, cfg in self.CONFIGS:
-            expr, a = self._tsq(q)[cfg]
-            cond = f"lang = '{lang}'" if lang else "lang NOT IN ('nl', 'en')"
-            parts.append(f"({cond} AND tsv @@ {expr})")
+        tsq = self._tsq(q)
+        for lang, cfg in LANGS:
+            expr, a = tsq[cfg]
+            parts.append(f"({lang_cond(lang)} AND tsv @@ {expr})")
             args += a
         return "(" + " OR ".join(parts) + ")", args
 
@@ -133,10 +154,17 @@ class PgFts(_Pg):
         fsql, fargs = self._filters(filters)
         tsq = self._tsq(q)
         (nl, a1), (en, a2), (xx, a3) = tsq["dutch"], tsq["english"], tsq["simple"]
-        rank = f"ts_rank_cd(tsv, CASE lang WHEN 'nl' THEN {nl} WHEN 'en' THEN {en} ELSE {xx} END)"
+        rank = (f"ts_rank_cd(tsv, CASE lang WHEN 'nl' THEN {nl} WHEN 'en' THEN {en} ELSE {xx} END, "
+                f"{self.normalization})")
         sql = (f"SELECT id FROM {self.table} WHERE {where} AND {fsql} "
                f"ORDER BY {rank} DESC, id LIMIT {k}")
         return sql, args + fargs + a1 + a2 + a3
+
+
+class PgFtsNorm(PgFts):
+    """Same, with ranking divided by 1 + log(document length): the usual tuning step."""
+    name = "pg-fts-norm"
+    normalization = 1
 
 
 class PgSearch(_Pg):
@@ -156,17 +184,95 @@ class PgSearch(_Pg):
         return sql, args + fargs
 
 
+class PgTextsearch(PgFts):
+    """Tiger Data pg_textsearch: BM25 top-k from one partial index per language.
+
+    Its ranking query matches *any* term, so the same AND/phrase/exclude semantics as the
+    other arms come from the stored tsvector column (cheap per-row check, no GIN needed).
+    Title and body are indexed as one text, so there is no title boost."""
+    name = "pg-textsearch"
+
+    @staticmethod
+    def doc(lang: str | None) -> str:
+        """Must repeat the index expression exactly (see sql/pg_indexes.sql)."""
+        return f"(CASE WHEN {lang_cond(lang)} THEN title || E'\\n' || job_text END)"
+
+    def _rows(self, q, filters, k):
+        fsql, fargs = self._filters(filters)
+        tsq = self._tsq(q)
+        terms = " ".join(q.terms())
+        parts, args = [], []
+        for lang, cfg in LANGS:
+            expr, a = tsq[cfg]
+            idx = f"{self.table}_bm25_{lang or 'xx'}"
+            doc = self.doc(lang)
+            parts.append(
+                f"(SELECT id, {doc} <@> to_bm25query(%s, '{idx}') AS s FROM {self.table} "
+                f"WHERE {lang_cond(lang)} AND tsv @@ {expr} AND {fsql} "
+                f"ORDER BY {doc} <@> to_bm25query(%s, '{idx}') LIMIT {k})")
+            args += [terms] + a + fargs + [terms]
+        sql = f"SELECT id FROM ({' UNION ALL '.join(parts)}) t ORDER BY s, id LIMIT {k}"
+        return sql, args
+
+
+class PgTextsearchTuned(PgTextsearch):
+    """Same, with enable_sort = off. The planner underestimates how many rows pass the tsv
+    check and then scores matching rows one by one instead of walking the BM25 index in
+    score order (10k sample: p50 9.7 ms -> 0.7 ms, same results)."""
+    name = "pg-textsearch-tuned"
+
+    def __init__(self, subset: str, cache: bool = False):
+        super().__init__(subset, cache)
+        self.conn.execute("SET enable_sort = off")
+
+
+class PgVchord(PgFts):
+    """VectorChord-bm25: BM25 top-k (Block-WeakAnd) over token arrays from pg_tokenizer.
+
+    Like pg_textsearch, its ranking query matches any term, so AND/phrase/exclude come from
+    the tsv check. The index hands at most bm25_limit candidates to Postgres before that check,
+    so the limit is raised from the default 100 to keep top-k complete."""
+    name = "pg-vchord"
+    BM25_LIMIT = 2000
+
+    def __init__(self, subset: str, cache: bool = False):
+        super().__init__(subset, cache)
+        # vchord_bm25's own functions resolve bm25vector unqualified.
+        self.conn.execute("SET search_path = public, bm25_catalog, tokenizer_catalog")
+        self.conn.execute(f"SET bm25_catalog.bm25_limit = {self.BM25_LIMIT}")
+
+    def _rows(self, q, filters, k):
+        fsql, fargs = self._filters(filters)
+        tsq = self._tsq(q)
+        terms = " ".join(q.terms())
+        parts, args = [], []
+        for lang, cfg in LANGS:
+            expr, a = tsq[cfg]
+            l = lang or "xx"
+            score = (f"emb_{l} <&> bm25_catalog.to_bm25query('{self.table}_vc_{l}', "
+                     f"tokenizer_catalog.tokenize(%s, '{self.table}_tok_{l}'))")
+            parts.append(f"(SELECT id, {score} AS s FROM {self.table} "
+                         f"WHERE {lang_cond(lang)} AND tsv @@ {expr} AND {fsql} "
+                         f"ORDER BY s LIMIT {k})")
+            args += [terms] + a + fargs
+        sql = f"SELECT id FROM ({' UNION ALL '.join(parts)}) t ORDER BY s, id LIMIT {k}"
+        return sql, args
+
+
 # ----------------------------------------------------------- Elasticsearch
 
 class Elastic(Engine):
+    """cache=False sends request_cache=false, so repeated size:0 requests (counts, facets)
+    measure engine work rather than the shard request cache."""
     name = "elasticsearch"
     FIELDS = [f"title_{l}^{TITLE_BOOST}" for l in ("nl", "en", "xx")] + \
              [f"text_{l}" for l in ("nl", "en", "xx")]
 
-    def __init__(self, subset: str):
-        super().__init__(subset)
+    def __init__(self, subset: str, cache: bool = False):
+        super().__init__(subset, cache)
         self.index = self.table
         self.http = httpx.Client(base_url=config.ES_URL, timeout=60)
+        self.params = {"request_cache": "true" if cache else "false"}
 
     def close(self) -> None:
         self.http.close()
@@ -189,20 +295,25 @@ class Elastic(Engine):
         return {"bool": {"must": must, "must_not": [self._clause(c) for c in q.must_not],
                          "filter": flt}}
 
+    def _search(self, body: dict) -> dict:
+        r = self.http.post(f"/{self.index}/_search", json=body, params=self.params)
+        r.raise_for_status()
+        return r.json()
+
     def search(self, q, filters, k):
         body = {"query": self._query(q, filters), "size": k, "_source": False,
                 "track_total_hits": False, "sort": ["_score", {"id": "asc"}]}
-        r = self.http.post(f"/{self.index}/_search", json=body)
-        r.raise_for_status()
-        return [h["_id"] for h in r.json()["hits"]["hits"]]
+        return [h["_id"] for h in self._search(body)["hits"]["hits"]]
+
+    def count(self, q, filters):
+        body = {"query": self._query(q, filters), "size": 0, "track_total_hits": True}
+        return self._search(body)["hits"]["total"]["value"]
 
     def facet_city(self, q, filters, n=10):
-        body = {"query": self._query(q, filters), "size": 0,
-                "aggs": {"city": {"terms": {"field": "city", "size": n,
-                                            "exclude": [""]}}}}
-        r = self.http.post(f"/{self.index}/_search", json=body)
-        r.raise_for_status()
-        return [(b["key"], b["doc_count"]) for b in r.json()["aggregations"]["city"]["buckets"]]
+        body = {"query": self._query(q, filters), "size": 0, "track_total_hits": False,
+                "aggs": {"city": {"terms": {"field": "city", "size": n, "exclude": [""]}}}}
+        return [(b["key"], b["doc_count"]) for b in self._search(body)["aggregations"]["city"]["buckets"]]
 
 
-ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgSearch, Elastic)}
+ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgTextsearch,
+                                PgTextsearchTuned, PgVchord, Elastic)}

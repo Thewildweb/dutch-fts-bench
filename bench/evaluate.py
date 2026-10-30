@@ -1,7 +1,9 @@
 """nDCG@10 and recall@100 per engine, profile and tag, from run files and qrels.
 
 Unjudged documents count as non-relevant; the judged fraction of each top-10 is reported
-so a low score from an engine that wasn't in the pool is visible."""
+so a low score from an engine that wasn't in the pool is visible. Recall is relative to
+the relevant documents found in the judged pool (top-20 of every engine), not to the
+whole collection. Queries an engine doesn't support are left out of its averages."""
 import json
 import math
 from collections import defaultdict
@@ -29,6 +31,8 @@ def evaluate(subset: str) -> list[dict]:
         groups: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
         for line in path.read_text().splitlines():
             r = json.loads(line)
+            if "unsupported" in r:
+                continue  # reported via the run file, not scored as zero
             rel = qrels.get(r["qid"], {})
             if not any(rel.values()):
                 continue  # no relevant doc found by any engine: nothing to measure

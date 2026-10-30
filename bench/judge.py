@@ -1,4 +1,4 @@
-"""Pool the top-10 of every engine per query and grade each (query, doc) pair 0/1/2 with an LLM.
+"""Pool the top-20 of every engine per query and grade each (query, doc) pair 0/1/2 with an LLM.
 
 Grades are cached in judgments/qrels.jsonl, so re-runs only grade new pairs."""
 import json
@@ -10,7 +10,7 @@ import httpx
 from . import config
 from .run import load_queries
 
-POOL_DEPTH = 10
+POOL_DEPTH = 20  # judged depth per engine; deeper pools make recall@100 less biased
 QRELS = config.JUDGMENTS / "qrels.jsonl"
 
 PROMPT = """You grade search results for a Dutch job-search engine.
@@ -46,7 +46,7 @@ def pool(subset: str) -> dict[str, set[str]]:
     for path in (config.RESULTS / "runs").glob(f"*__{subset}.jsonl"):
         for line in path.read_text().splitlines():
             r = json.loads(line)
-            pooled.setdefault(r["qid"], set()).update(r["ids"][:POOL_DEPTH])
+            pooled.setdefault(r["qid"], set()).update(r.get("ids", [])[:POOL_DEPTH])
     return pooled
 
 

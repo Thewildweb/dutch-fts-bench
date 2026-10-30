@@ -37,10 +37,10 @@ cp .env.example .env            # set paths, ports, limits
 uv sync
 uv run bench verify
 
-# Postgres
+# Postgres (ParadeDB image; pg-textsearch and pg-vchord work the same way, one at a time)
 docker compose up -d postgres
 uv run bench --subset full load pg
-uv run bench --subset full index trgm   # also: fts, bm25
+uv run bench --subset full index trgm   # also: tsv, fts, bm25, textsearch, vchord
 uv run bench --subset full runs pg-fts  # top-100 lists -> results/runs/
 uv run bench --subset full latency pg-fts --k 10 --concurrency 1 4 16
 docker compose stop postgres
@@ -51,16 +51,38 @@ uv run bench --subset full load es
 uv run bench --subset full runs elasticsearch
 uv run bench --subset full latency elasticsearch
 
-# Relevance: pool top-10 of all engines, LLM-grade 0/1/2, check a sample by hand
+# Relevance: pool top-20 of all engines, LLM-grade 0/1/2, check a sample by hand
 uv run bench --subset full judge
 uv run bench calibrate -n 20
 uv run bench --subset full eval
 ```
 
-Arms: `pg-ilike` (sequential scan), `pg-trgm` (same SQL, trigram GIN indexes), `pg-fts`,
-`pg-search`, `elasticsearch`. `--subset 10k` uses a fixed 10k-row sample (first 10k by `md5(id)`).
-Cold runs: restart the engine, drop the OS page cache, run with `--repeats 1 --label cold`.
-Use `--facets` to time a city facet count instead of a top-k search.
+### Arms
+
+| Arm | Container | Index arms needed | Notes |
+|---|---|---|---|
+| `pg-ilike` | `postgres` | none | substring match, index scans disabled |
+| `pg-trgm` | `postgres` | `trgm` | same SQL, trigram GIN indexes |
+| `pg-fts` | `postgres` | `fts` | tsvector + GIN, `ts_rank_cd` |
+| `pg-fts-norm` | `postgres` | `fts` | ranking divided by 1 + log(doc length) |
+| `pg-search` | `postgres` | `bm25` | ParadeDB BM25 |
+| `pg-textsearch` | `pg-textsearch` | `tsv`, `textsearch` | Tiger Data BM25; AND/phrase via the tsv column |
+| `pg-textsearch-tuned` | `pg-textsearch` | same | `enable_sort = off` (see `bench/engines.py`) |
+| `pg-vchord` | `pg-vchord` | `tsv`, `vchord` | VectorChord-bm25 + pg_tokenizer |
+| `elasticsearch` | `elasticsearch` | `load es` | |
+
+Stemming and stopwords are the same everywhere: Postgres `dutch`/`english` snowball configs,
+the same stemmer + stopword list in pg_search and pg_tokenizer, Elasticsearch `dutch`/`english` analyzers.
+`--subset 10k` uses a fixed 10k-row sample (first 10k by `md5(id)`).
+
+### Latency modes
+
+- default: closed loop, one OS process per client (`--concurrency 1 4 16`).
+- `--rate 200`: open loop at a fixed rate; queueing delay counts, so stalls show in p99.
+- `--cache`: allow the Elasticsearch shard request cache (off by default, so repeated
+  size-0 requests measure engine work). `--zipf 1.0`: skewed query popularity, for cache runs.
+- `--facets`: time a city facet count instead of a top-k search.
+- Cold runs: restart the engine, drop the OS page cache, run with `--repeats 1 --label cold`.
 
 Results are appended to `results/index.csv`, `results/latency.csv` and `results/relevance.csv`,
 tagged with host and timestamp.
@@ -69,7 +91,8 @@ tagged with host and timestamp.
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Postgres 17 + ParadeDB, Elasticsearch, all on 127.0.0.1 |
+| `compose.yaml` | Postgres 17 (ParadeDB, pg_textsearch, VectorChord images), Elasticsearch; all on 127.0.0.1 |
+| `docker/` | image build for pg_textsearch |
 | `sql/` | table and index arms |
 | `bench/engines.py` | one class per search arm |
 | `bench/query.py` | query syntax and per-engine rendering |

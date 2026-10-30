@@ -1,7 +1,8 @@
 # All services bind to 127.0.0.1 only. Start one engine at a time:
 #   docker compose up -d postgres     |   docker compose up -d elasticsearch
 services:
-  postgres:
+  # Three Postgres flavours, same settings and limits; run one at a time (they share a port).
+  postgres: &postgres
     image: ${PG_IMAGE:-paradedb/paradedb:latest-pg17}
     environment:
       POSTGRES_USER: bench
@@ -22,6 +23,37 @@ services:
     mem_limit: ${BENCH_MEM:-16g}
     volumes: [pgdata:/var/lib/postgresql/data]
 
+  pg-textsearch:
+    <<: *postgres
+    image: dutch-fts-bench/pg-textsearch:1.5.1
+    build: docker/pg-textsearch
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_textsearch
+      -c shared_buffers=${PG_SHARED_BUFFERS:-4GB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE:-8GB}
+      -c maintenance_work_mem=2GB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_wal_size=8GB
+      -c track_io_timing=on
+    volumes: [pgtsdata:/var/lib/postgresql/data]
+
+  pg-vchord:
+    <<: *postgres
+    image: ${VCHORD_IMAGE:-tensorchord/vchord-suite:pg17-latest}
+    command: >
+      postgres
+      -c shared_preload_libraries=vchord,vector,pg_tokenizer
+      -c shared_buffers=${PG_SHARED_BUFFERS:-4GB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE:-8GB}
+      -c maintenance_work_mem=2GB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_wal_size=8GB
+      -c track_io_timing=on
+    volumes: [pgvcdata:/var/lib/postgresql/data]
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION:-9.1.0}
     environment:
@@ -37,4 +69,6 @@ services:
 
 volumes:
   pgdata:
+  pgtsdata:
+  pgvcdata:
   esdata:

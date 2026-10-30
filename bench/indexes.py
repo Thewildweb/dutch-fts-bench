@@ -8,7 +8,7 @@ import psycopg
 
 from . import config, dataset, results
 
-PG_ARMS = ("trgm", "fts", "bm25")
+PG_ARMS = ("trgm", "tsv", "fts", "bm25", "textsearch", "vchord")
 
 
 def _arm_sql(arm: str, table: str) -> str:
@@ -48,11 +48,13 @@ def build_pg(arm: str, subset: str) -> dict:
 def drop_pg(arm: str, subset: str) -> None:
     table = config.table_name(subset)
     names = {"trgm": [f"{table}_title_trgm", f"{table}_text_trgm"],
-             "fts": [f"{table}_tsv"], "bm25": [f"{table}_bm25"]}[arm]
+             "tsv": [], "fts": [f"{table}_tsv"], "bm25": [f"{table}_bm25"],
+             "textsearch": [f"{table}_bm25_{l}" for l in ("nl", "en", "xx")],
+             "vchord": [f"{table}_vc_{l}" for l in ("nl", "en", "xx")]}[arm]
     with psycopg.connect(config.PG_DSN, autocommit=True) as conn:
         for n in names:
             conn.execute(f"DROP INDEX IF EXISTS {n}")
-        if arm == "fts":
+        if arm == "tsv":
             conn.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS tsv")
 
 
