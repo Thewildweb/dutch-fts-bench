@@ -25,15 +25,10 @@ import psycopg
 
 from . import config, results
 from .run import latency
+from .telemetry import service_of
 
 MB = 1024 * 1024
 HELPER_IMAGE = "python:3.13-slim"
-
-
-def service_of(engine: str) -> str:
-    if engine.startswith("elasticsearch"):
-        return "elasticsearch"
-    return "pg-textsearch" if engine.startswith("pg-textsearch") else "postgres"
 
 
 def _bytes(size: str) -> int:

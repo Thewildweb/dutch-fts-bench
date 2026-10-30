@@ -13,7 +13,7 @@ import random
 import statistics
 import time
 
-from . import config, results
+from . import config, results, telemetry
 from .engines import ENGINES
 from .query import parse
 
@@ -143,7 +143,9 @@ def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, la
         # perf_counter is system-wide on Linux and macOS, so t0 is valid in child processes.
         parts = [(engine, subset, cache, k, facets, jobs[i::concurrency], t0, interval)
                  for i in range(concurrency)]
-        with mp.get_context("spawn").Pool(concurrency + (1 if writes else 0)) as pool:
+        run_name = f"{engine}__{subset}__{time.strftime('%Y%m%dT%H%M%S')}__{prof}"
+        with telemetry.Sampler(telemetry.service_of(engine), run_name) as tel, \
+                mp.get_context("spawn").Pool(concurrency + (1 if writes else 0)) as pool:
             writer = None
             if writes:
                 stop_at = t0 + len(jobs) * interval
@@ -165,7 +167,8 @@ def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, la
                "n": len(lat), "errors": len(errors), "skipped_queries": skipped,
                "p50_ms": round(_pct(lat, 50), 2), "p95_ms": round(_pct(lat, 95), 2),
                "p99_ms": round(_pct(lat, 99), 2), "max_ms": round(max(lat), 2),
-               "mean_ms": round(statistics.mean(lat), 2), "qps": round(len(lat) / wall, 1)}
+               "mean_ms": round(statistics.mean(lat), 2), "qps": round(len(lat) / wall, 1),
+               **tel.summary()}
         results.append("latency", row)
         rows.append(row)
         for err in errors[:5]:
