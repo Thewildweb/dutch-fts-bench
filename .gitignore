@@ -5,3 +5,8 @@ __pycache__/
 results/raw/
 judgments/cache/
 logs/
+# Work in progress: results and judgments are published deliberately once a full set
+# is final (remove these lines then).
+results/*.csv
+results/runs/
+judgments/qrels.jsonl
