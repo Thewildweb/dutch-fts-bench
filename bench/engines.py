@@ -104,7 +104,11 @@ class _Pg(Engine):
                           [new_id, src_id])
 
     def remove_copies(self):
-        return self.conn.execute(f"DELETE FROM {self.table} WHERE id LIKE 'w-%%'").rowcount
+        n = self.conn.execute(f"DELETE FROM {self.table} WHERE id LIKE 'w-%%'").rowcount
+        # Force index cleanup: with few dead rows, plain VACUUM skips the indexes ("index
+        # scan bypassed"), which left deleted copies inside the pg_search index.
+        self.conn.execute(f"VACUUM (INDEX_CLEANUP ON, ANALYZE) {self.table}")
+        return n
 
 
 class PgIlike(_Pg):
