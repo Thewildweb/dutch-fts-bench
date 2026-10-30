@@ -88,8 +88,8 @@ the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` a
 - `--writes 20` (with `--rate`): copy 20 random documents per second under new ids during
   the run, so refreshes invalidate caches as they would with live data. Copies are removed afterwards.
 - `--facets`: time a city facet count instead of a top-k search.
-- Cold runs: `scripts/cold-run.sh full postgres pg-search` restarts the container with an empty
-  OS page cache and runs each query once (needs a sudoers rule for `drop_caches`, see the script).
+- Cold runs: `bench --subset full memory cold pg-search` stops the engine, evicts its data files
+  from the OS page cache (no root needed, see `scripts/pagecache.py`), starts it and runs each query once.
 
 ### Memory
 
@@ -101,6 +101,8 @@ Runs on the benchmark host and drives Docker itself (stops and starts the contai
 uv run bench --subset full memory working-set pg-search
 # Squeeze: rerun latency under container limits (shared_buffers 1/4, ES heap 1/2 of it)
 uv run bench --subset full memory squeeze pg-search --sizes 1g 2g 4g
+# Cold start: evict the engine's files, start it, every query once
+uv run bench --subset full memory cold pg-search
 # Elasticsearch heap size at the default container limit
 uv run bench --subset full memory heap elasticsearch-mostfields --sizes 512m 1g 2g 4g
 ```

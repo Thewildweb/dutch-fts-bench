@@ -39,7 +39,7 @@ def main() -> None:
     s.add_argument("-n", type=int, default=20)
     sub.add_parser("eval", help="nDCG@10 / recall@100, appended to results/relevance.csv")
     s = sub.add_parser("memory", help="RAM per arm (needs Docker), to results/memory.csv")
-    s.add_argument("mode", choices=["working-set", "squeeze", "heap"])
+    s.add_argument("mode", choices=["working-set", "squeeze", "heap", "cold"])
     s.add_argument("engine", choices=list(ENGINES))
     s.add_argument("--sizes", nargs="+", default=[],
                    help="squeeze: container limits (e.g. 1g 2g 4g); heap: JVM heaps (e.g. 512m 1g)")
@@ -76,6 +76,8 @@ def main() -> None:
         facets = not a.no_facets
         if a.mode == "working-set":
             memory.working_set(a.engine, a.subset, facets)
+        elif a.mode == "cold":
+            memory.cold(a.engine, a.subset)
         else:
             getattr(memory, a.mode)(a.engine, a.subset, a.sizes, facets)
     elif a.cmd == "eval":

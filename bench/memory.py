@@ -8,6 +8,7 @@ working_set: start the engine with nothing of its data cached (container stopped
 squeeze: restart the engine under a container memory limit (Postgres shared_buffers = 1/4 of
   it, Elasticsearch heap = 1/2, the usual advice) and rerun latency, to find where p99 breaks.
 heap: Elasticsearch only; vary the JVM heap with the default container limit.
+cold: cold-start latency, every query once right after a cold start.
 
 Rows go to results/memory.csv; latency rows from squeeze/heap go to results/latency.csv
 with a label such as "mem=2g".
@@ -207,6 +208,13 @@ def working_set(engine: str, subset: str, facets: bool = True) -> None:
     if facets:
         latency(engine, subset, 10, 1, 1, label="memory-probe", facets=True)
         _snapshot(engine, subset, "after facets")
+
+
+def cold(engine: str, subset: str) -> None:
+    """Cold start: nothing of the engine's data cached, then every query once (one client)."""
+    cold_start(service_of(engine))
+    latency(engine, subset, 10, 1, 1, label="cold")
+    _snapshot(engine, subset, "after cold run")
 
 
 def _measure_under(engine: str, subset: str, env: dict, label: str, facets: bool) -> None:
