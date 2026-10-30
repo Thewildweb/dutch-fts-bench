@@ -1,0 +1,40 @@
+# All services bind to 127.0.0.1 only. Start one engine at a time:
+#   docker compose up -d postgres     |   docker compose up -d elasticsearch
+services:
+  postgres:
+    image: ${PG_IMAGE:-paradedb/paradedb:latest-pg17}
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench
+      POSTGRES_DB: bench
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-4GB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE:-8GB}
+      -c maintenance_work_mem=2GB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_wal_size=8GB
+      -c track_io_timing=on
+    ports: ["127.0.0.1:${PG_PORT:-5432}:5432"]
+    shm_size: 2g
+    cpus: ${BENCH_CPUS:-8}
+    mem_limit: ${BENCH_MEM:-16g}
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION:-9.1.0}
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms${ES_HEAP:-8g} -Xmx${ES_HEAP:-8g}
+    ports: ["127.0.0.1:${ES_PORT:-9200}:9200"]
+    cpus: ${BENCH_CPUS:-8}
+    mem_limit: ${BENCH_MEM:-16g}
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+    volumes: [esdata:/usr/share/elasticsearch/data]
+
+volumes:
+  pgdata:
+  esdata:

@@ -1,0 +1,80 @@
+{"qid": "w001", "profile": "website", "text": "verpleegkundige", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w002", "profile": "website", "text": "magazijnmedewerker", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w003", "profile": "website", "text": "vrachtwagenchauffeur", "filters": {}, "tags": ["single", "title", "compound"]}
+{"qid": "w004", "profile": "website", "text": "chauffeur", "filters": {}, "tags": ["single", "compound"]}
+{"qid": "w005", "profile": "website", "text": "heftruckchauffeur", "filters": {}, "tags": ["single", "title", "compound"]}
+{"qid": "w006", "profile": "website", "text": "wijkverpleegkundige", "filters": {}, "tags": ["single", "compound"]}
+{"qid": "w007", "profile": "website", "text": "verzorgende ig", "filters": {}, "tags": ["multi", "title"]}
+{"qid": "w008", "profile": "website", "text": "huishoudelijke hulp", "filters": {}, "tags": ["multi", "title"]}
+{"qid": "w009", "profile": "website", "text": "productiemedewerker", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w010", "profile": "website", "text": "schoonmaker", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w011", "profile": "website", "text": "schoonmaak", "filters": {}, "tags": ["single", "compound"]}
+{"qid": "w012", "profile": "website", "text": "postbezorger", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w013", "profile": "website", "text": "vakkenvuller bijbaan", "filters": {}, "tags": ["multi"]}
+{"qid": "w014", "profile": "website", "text": "bijbaan", "filters": {}, "tags": ["single"]}
+{"qid": "w015", "profile": "website", "text": "thuiswerken", "filters": {}, "tags": ["single"]}
+{"qid": "w016", "profile": "website", "text": "parttime", "filters": {}, "tags": ["single"]}
+{"qid": "w017", "profile": "website", "text": "administratief medewerker", "filters": {}, "tags": ["multi", "title"]}
+{"qid": "w018", "profile": "website", "text": "boekhouder", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w019", "profile": "website", "text": "accountmanager", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w020", "profile": "website", "text": "monteur", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w021", "profile": "website", "text": "elektromonteur", "filters": {}, "tags": ["single", "title", "compound"]}
+{"qid": "w022", "profile": "website", "text": "installatiemonteur", "filters": {}, "tags": ["single", "title", "compound"]}
+{"qid": "w023", "profile": "website", "text": "leerkracht basisonderwijs", "filters": {}, "tags": ["multi", "title"]}
+{"qid": "w024", "profile": "website", "text": "docent", "filters": {}, "tags": ["single", "title"]}
+{"qid": "w025", "profile": "website", "text": "kok", "filters": {}, "tags": ["single", "title", "short"]}
+{"qid": "w026", "profile": "website", "text": "zorg", "filters": {}, "tags": ["single", "broad"]}
+{"qid": "w027", "profile": "website", "text": "python developer", "filters": {}, "tags": ["multi", "skill"]}
+{"qid": "w028", "profile": "website", "text": "python developer utrecht", "filters": {}, "tags": ["title_city", "skill"]}
+{"qid": "w029", "profile": "website", "text": "verpleegkundige amsterdam", "filters": {}, "tags": ["title_city"]}
+{"qid": "w030", "profile": "website", "text": "magazijn rotterdam", "filters": {}, "tags": ["title_city", "compound"]}
+{"qid": "w031", "profile": "website", "text": "verpleegkundige den haag", "filters": {}, "tags": ["title_city", "synonym"]}
+{"qid": "w032", "profile": "website", "text": "data analist", "filters": {}, "tags": ["multi", "title"]}
+{"qid": "w033", "profile": "website", "text": "data analyst", "filters": {}, "tags": ["multi", "title", "english"]}
+{"qid": "w034", "profile": "website", "text": "software engineer", "filters": {}, "tags": ["multi", "english"]}
+{"qid": "w035", "profile": "website", "text": "project manager", "filters": {}, "tags": ["multi", "english"]}
+{"qid": "w036", "profile": "website", "text": "warehouse worker", "filters": {}, "tags": ["multi", "english"]}
+{"qid": "w037", "profile": "website", "text": "nurse", "filters": {}, "tags": ["single", "english"]}
+{"qid": "w038", "profile": "website", "text": "verpleegkundigen", "filters": {}, "tags": ["single", "plural"]}
+{"qid": "w039", "profile": "website", "text": "chauffeurs", "filters": {}, "tags": ["single", "plural"]}
+{"qid": "w040", "profile": "website", "text": "verpleegkunige", "filters": {}, "tags": ["typo"]}
+{"qid": "w041", "profile": "website", "text": "magazijnmedewerkr", "filters": {}, "tags": ["typo"]}
+{"qid": "w042", "profile": "website", "text": "progammeur", "filters": {}, "tags": ["typo"]}
+{"qid": "w043", "profile": "website", "text": "c#", "filters": {}, "tags": ["symbol", "skill"]}
+{"qid": "w044", "profile": "website", "text": "c++", "filters": {}, "tags": ["symbol", "skill"]}
+{"qid": "w045", "profile": "website", "text": "sap", "filters": {}, "tags": ["single", "skill", "short"]}
+{"qid": "w046", "profile": "website", "text": "hbo", "filters": {}, "tags": ["single", "short"]}
+{"qid": "w047", "profile": "website", "text": "rijbewijs c", "filters": {}, "tags": ["multi", "short"]}
+{"qid": "w048", "profile": "website", "text": "zzp", "filters": {}, "tags": ["single", "short"]}
+{"qid": "r049", "profile": "recruiter", "text": "\"python\" \"django\" OR \"fastapi\"", "filters": {}, "tags": ["boolean", "skill"]}
+{"qid": "r050", "profile": "recruiter", "text": "python developer -stage", "filters": {}, "tags": ["boolean", "exclude"]}
+{"qid": "r051", "profile": "recruiter", "text": "\"senior java developer\"", "filters": {}, "tags": ["phrase"]}
+{"qid": "r052", "profile": "recruiter", "text": "\"zorg en welzijn\" verpleegkundige OR verzorgende", "filters": {}, "tags": ["phrase", "boolean"]}
+{"qid": "r053", "profile": "recruiter", "text": "wijkverpleegkundige OR \"verpleegkundige wijk\"", "filters": {}, "tags": ["compound", "boolean"]}
+{"qid": "r054", "profile": "recruiter", "text": "verpleegkundige -vrijwilliger -vrijwilligers", "filters": {}, "tags": ["exclude"]}
+{"qid": "r055", "profile": "recruiter", "text": "verpleegkundige", "filters": {"city": "Utrecht"}, "tags": ["filter"]}
+{"qid": "r056", "profile": "recruiter", "text": "magazijnmedewerker", "filters": {"city": "Rotterdam", "since": "2026-09-01"}, "tags": ["filter", "date"]}
+{"qid": "r057", "profile": "recruiter", "text": "software engineer", "filters": {"lang": "en"}, "tags": ["filter", "english"]}
+{"qid": "r058", "profile": "recruiter", "text": "software engineer", "filters": {"lang": "nl"}, "tags": ["filter", "english"]}
+{"qid": "r059", "profile": "recruiter", "text": "data engineer azure OR aws OR gcp", "filters": {}, "tags": ["boolean", "skill"]}
+{"qid": "r060", "profile": "recruiter", "text": "\"power bi\" analist", "filters": {}, "tags": ["phrase", "skill"]}
+{"qid": "r061", "profile": "recruiter", "text": "\"rijbewijs ce\" chauffeur", "filters": {}, "tags": ["phrase"]}
+{"qid": "r062", "profile": "recruiter", "text": "vrachtwagenchauffeur \"internationaal\"", "filters": {}, "tags": ["compound", "phrase"]}
+{"qid": "r063", "profile": "recruiter", "text": "\"32 uur\" OR \"36 uur\" boekhouder", "filters": {}, "tags": ["phrase", "boolean", "numbers"]}
+{"qid": "r064", "profile": "recruiter", "text": "hr adviseur OR \"hr business partner\"", "filters": {}, "tags": ["boolean", "title"]}
+{"qid": "r065", "profile": "recruiter", "text": "\"verzorgende ig\" nachtdienst", "filters": {}, "tags": ["phrase"]}
+{"qid": "r066", "profile": "recruiter", "text": "kubernetes terraform", "filters": {}, "tags": ["skill"]}
+{"qid": "r067", "profile": "recruiter", "text": "react typescript -stage -stagiair", "filters": {}, "tags": ["skill", "exclude"]}
+{"qid": "r068", "profile": "recruiter", "text": "sap fico consultant", "filters": {}, "tags": ["skill"]}
+{"qid": "r069", "profile": "recruiter", "text": "\"cao vvt\"", "filters": {}, "tags": ["phrase"]}
+{"qid": "r070", "profile": "recruiter", "text": "big-registratie verpleegkundige", "filters": {}, "tags": ["hyphen"]}
+{"qid": "r071", "profile": "recruiter", "text": "mbo-4 doktersassistent", "filters": {}, "tags": ["hyphen", "title"]}
+{"qid": "r072", "profile": "recruiter", "text": "teamleider productie", "filters": {"city": "Eindhoven"}, "tags": ["filter"]}
+{"qid": "r073", "profile": "recruiter", "text": "leerkracht groep 8", "filters": {}, "tags": ["numbers"]}
+{"qid": "r074", "profile": "recruiter", "text": "\"thuiswerken\" developer", "filters": {"since": "2026-09-01"}, "tags": ["date"]}
+{"qid": "r075", "profile": "recruiter", "text": "werkvoorbereider elektrotechniek", "filters": {}, "tags": ["compound"]}
+{"qid": "r076", "profile": "recruiter", "text": "onderhoudsmonteur storingsdienst", "filters": {}, "tags": ["compound"]}
+{"qid": "r077", "profile": "recruiter", "text": "medior OR senior \"full stack\"", "filters": {}, "tags": ["boolean", "phrase"]}
+{"qid": "r078", "profile": "recruiter", "text": "deutsch sprechend", "filters": {}, "tags": ["german"]}
+{"qid": "r079", "profile": "recruiter", "text": "polskie", "filters": {}, "tags": ["polish"]}
+{"qid": "r080", "profile": "recruiter", "text": "verpleegkundige", "filters": {"lang": "en"}, "tags": ["filter", "mixed_lang"]}
