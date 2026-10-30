@@ -156,6 +156,9 @@ class PgFts(_Pg):
     name = "pg-fts"
     # ts_rank_cd normalization flags; 0 = default (no length normalization).
     normalization = 0
+    # Weights for D, C, B, A labels. Title is A, body B: A/B = 2, the same title boost as
+    # pg_search and Elasticsearch (the default {0.1, 0.2, 0.4, 1.0} would make it 2.5).
+    WEIGHTS = "{0.1, 0.2, 0.5, 1.0}"
 
     def _tsq(self, q: Query) -> dict[str, tuple[str, list]]:
         return {cfg: to_tsquery_sql(q, cfg) for _, cfg in LANGS}
@@ -174,7 +177,7 @@ class PgFts(_Pg):
         fsql, fargs = self._filters(filters)
         tsq = self._tsq(q)
         (nl, a1), (en, a2), (xx, a3) = tsq["dutch"], tsq["english"], tsq["simple"]
-        rank = (f"ts_rank_cd(tsv, CASE lang WHEN 'nl' THEN {nl} WHEN 'en' THEN {en} ELSE {xx} END, "
+        rank = (f"ts_rank_cd('{self.WEIGHTS}', tsv, CASE lang WHEN 'nl' THEN {nl} WHEN 'en' THEN {en} ELSE {xx} END, "
                 f"{self.normalization})")
         sql = (f"SELECT id FROM {self.table} WHERE {where} AND {fsql} "
                f"ORDER BY {rank} DESC, id LIMIT {k}")
@@ -204,6 +207,12 @@ class PgSearch(_Pg):
         return sql, args + fargs
 
 
+class PgSearchNoBoost(PgSearch):
+    """Same index, no title boost: separates the effect of the boost from the BM25 engine."""
+    name = "pg-search-noboost"
+    FIELDS = [f"title_{l}" for l in ("nl", "en", "xx")] + [f"text_{l}" for l in ("nl", "en", "xx")]
+
+
 class PgTextsearch(PgFts):
     """Tiger Data pg_textsearch: BM25 top-k from one partial index per language.
 
@@ -211,9 +220,9 @@ class PgTextsearch(PgFts):
     other arms come from the stored tsvector column (cheap per-row check, no GIN needed).
     Title and body are indexed as one text, so there is no title boost."""
     name = "pg-textsearch"
+    INDEX = "bm25"  # index names {table}_{INDEX}_{lang}
 
-    @staticmethod
-    def doc(lang: str | None) -> str:
+    def doc(self, lang: str | None) -> str:
         """Must repeat the index expression exactly (see sql/pg_indexes.sql)."""
         return f"(CASE WHEN {lang_cond(lang)} THEN title || E'\\n' || job_text END)"
 
@@ -224,7 +233,7 @@ class PgTextsearch(PgFts):
         parts, args = [], []
         for lang, cfg in LANGS:
             expr, a = tsq[cfg]
-            idx = f"{self.table}_bm25_{lang or 'xx'}"
+            idx = f"{self.table}_{self.INDEX}_{lang or 'xx'}"
             doc = self.doc(lang)
             parts.append(
                 f"(SELECT id, {doc} <@> to_bm25query(%s, '{idx}') AS s FROM {self.table} "
@@ -244,6 +253,18 @@ class PgTextsearchTuned(PgTextsearch):
     def __init__(self, subset: str, cache: bool = False):
         super().__init__(subset, cache)
         self.conn.execute("SET enable_sort = off")
+
+
+class PgTextsearchTitle(PgTextsearchTuned):
+    """Workaround for the missing field boost: the title is indexed twice, then the body.
+    Raises the title's term counts (BM25 dampens those) and lengthens the document, so it
+    is not the same as a ×2 field boost."""
+    name = "pg-textsearch-title"
+    INDEX = "bm25t"
+
+    def doc(self, lang):
+        return (f"(CASE WHEN {lang_cond(lang)} THEN title || E'\\n' || title || E'\\n' || "
+                f"job_text END)")
 
 
 class PgVchord(PgFts):
@@ -348,5 +369,6 @@ class Elastic(Engine):
         return [(b["key"], b["doc_count"]) for b in self._search(body)["aggregations"]["city"]["buckets"]]
 
 
-ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgTextsearch,
-                                PgTextsearchTuned, PgVchord, Elastic)}
+ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgSearchNoBoost,
+                                PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, PgVchord,
+                                Elastic)}

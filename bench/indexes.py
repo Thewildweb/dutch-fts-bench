@@ -8,7 +8,7 @@ import psycopg
 
 from . import config, dataset, results
 
-PG_ARMS = ("trgm", "tsv", "fts", "bm25", "textsearch", "vchord")
+PG_ARMS = ("trgm", "tsv", "fts", "bm25", "textsearch", "textsearch_title", "vchord")
 
 
 def _arm_sql(arm: str, table: str) -> str:
@@ -50,6 +50,7 @@ def drop_pg(arm: str, subset: str) -> None:
     names = {"trgm": [f"{table}_title_trgm", f"{table}_text_trgm"],
              "tsv": [], "fts": [f"{table}_tsv"], "bm25": [f"{table}_bm25"],
              "textsearch": [f"{table}_bm25_{l}" for l in ("nl", "en", "xx")],
+             "textsearch_title": [f"{table}_bm25t_{l}" for l in ("nl", "en", "xx")],
              "vchord": [f"{table}_vc_{l}" for l in ("nl", "en", "xx")]}[arm]
     with psycopg.connect(config.PG_DSN, autocommit=True) as conn:
         for n in names:

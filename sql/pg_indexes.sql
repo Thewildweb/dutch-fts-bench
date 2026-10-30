@@ -53,6 +53,17 @@ CREATE INDEX IF NOT EXISTS {table}_bm25_en ON {table} USING bm25
 CREATE INDEX IF NOT EXISTS {table}_bm25_xx ON {table} USING bm25
     ((CASE WHEN lang NOT IN ('nl', 'en') THEN title || E'\n' || job_text END)) WITH (text_config = 'simple');
 
+-- @arm textsearch_title
+-- Same as textsearch, with the title repeated: a workaround for pg_textsearch having no
+-- field weights. Needs the tsv arm.
+CREATE EXTENSION IF NOT EXISTS pg_textsearch;
+CREATE INDEX IF NOT EXISTS {table}_bm25t_nl ON {table} USING bm25
+    ((CASE WHEN lang = 'nl' THEN title || E'\n' || title || E'\n' || job_text END)) WITH (text_config = 'dutch');
+CREATE INDEX IF NOT EXISTS {table}_bm25t_en ON {table} USING bm25
+    ((CASE WHEN lang = 'en' THEN title || E'\n' || title || E'\n' || job_text END)) WITH (text_config = 'english');
+CREATE INDEX IF NOT EXISTS {table}_bm25t_xx ON {table} USING bm25
+    ((CASE WHEN lang NOT IN ('nl', 'en') THEN title || E'\n' || title || E'\n' || job_text END)) WITH (text_config = 'simple');
+
 -- @arm vchord
 -- VectorChord-bm25 + pg_tokenizer; needs the tsv arm. pg_tokenizer uses Postgres's own snowball
 -- dictionaries (dutch_stem / english_stem / simple), so tokens match the tsvector arms. Each
