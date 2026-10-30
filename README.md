@@ -8,7 +8,8 @@ Two use cases:
 - **website**: short queries from a job-site search box, many users. Target p99 < 100 ms.
 - **recruiter**: detailed searches with phrases, `OR`, exclusions and filters on city, language and date.
 
-Relevance and speed count equally. Vector/hybrid search is out of scope for now.
+Relevance and speed count equally. Vector and hybrid search are out of scope; that includes
+VectorChord-bm25, which is built as the keyword half of hybrid retrieval.
 
 ## Dataset
 
@@ -37,10 +38,10 @@ cp .env.example .env            # set paths, ports, limits
 uv sync
 uv run bench verify
 
-# Postgres (ParadeDB image; pg-textsearch and pg-vchord work the same way, one at a time)
+# Postgres (ParadeDB image; the pg-textsearch container works the same way, one at a time)
 docker compose up -d postgres
 uv run bench --subset full load pg
-uv run bench --subset full index trgm   # also: tsv, fts, bm25, textsearch, vchord
+uv run bench --subset full index trgm   # also: tsv, fts, bm25, textsearch, textsearch_title
 uv run bench --subset full runs pg-fts  # top-100 lists -> results/runs/
 uv run bench --subset full latency pg-fts --k 10 --concurrency 1 4 16
 docker compose stop postgres
@@ -66,13 +67,14 @@ uv run bench --subset full eval
 | `pg-fts` | `postgres` | `fts` | tsvector + GIN, `ts_rank_cd` |
 | `pg-fts-norm` | `postgres` | `fts` | ranking divided by 1 + log(doc length) |
 | `pg-search` | `postgres` | `bm25` | ParadeDB BM25 |
+| `pg-search-noboost` | `postgres` | `bm25` | same index, no title boost |
 | `pg-textsearch` | `pg-textsearch` | `tsv`, `textsearch` | Tiger Data BM25; AND/phrase via the tsv column |
 | `pg-textsearch-tuned` | `pg-textsearch` | same | `enable_sort = off` (see `bench/engines.py`) |
-| `pg-vchord` | `pg-vchord` | `tsv`, `vchord` | VectorChord-bm25 + pg_tokenizer |
+| `pg-textsearch-title` | `pg-textsearch` | `tsv`, `textsearch_title` | title indexed twice (no field weights in pg_textsearch) |
 | `elasticsearch` | `elasticsearch` | `load es` | |
 
 Stemming and stopwords are the same everywhere: Postgres `dutch`/`english` snowball configs,
-the same stemmer + stopword list in pg_search and pg_tokenizer, Elasticsearch `dutch`/`english` analyzers.
+the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` analyzers.
 `--subset 10k` uses a fixed 10k-row sample (first 10k by `md5(id)`).
 
 ### Latency modes
@@ -93,7 +95,7 @@ tagged with host and timestamp.
 
 | Path | What |
 |---|---|
-| `compose.yaml` | Postgres 17 (ParadeDB, pg_textsearch, VectorChord images), Elasticsearch; all on 127.0.0.1 |
+| `compose.yaml` | Postgres 17 (ParadeDB and pg_textsearch images), Elasticsearch; all on 127.0.0.1 |
 | `docker/` | image build for pg_textsearch |
 | `sql/` | table and index arms |
 | `bench/engines.py` | one class per search arm |

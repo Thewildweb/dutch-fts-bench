@@ -267,39 +267,6 @@ class PgTextsearchTitle(PgTextsearchTuned):
                 f"job_text END)")
 
 
-class PgVchord(PgFts):
-    """VectorChord-bm25: BM25 top-k (Block-WeakAnd) over token arrays from pg_tokenizer.
-
-    Like pg_textsearch, its ranking query matches any term, so AND/phrase/exclude come from
-    the tsv check. The index hands at most bm25_limit candidates to Postgres before that check,
-    so the limit is raised from the default 100 to keep top-k complete."""
-    name = "pg-vchord"
-    BM25_LIMIT = 2000
-
-    def __init__(self, subset: str, cache: bool = False):
-        super().__init__(subset, cache)
-        # vchord_bm25's own functions resolve bm25vector unqualified.
-        self.conn.execute("SET search_path = public, bm25_catalog, tokenizer_catalog")
-        self.conn.execute(f"SET bm25_catalog.bm25_limit = {self.BM25_LIMIT}")
-
-    def _rows(self, q, filters, k):
-        fsql, fargs = self._filters(filters)
-        tsq = self._tsq(q)
-        terms = " ".join(q.terms())
-        parts, args = [], []
-        for lang, cfg in LANGS:
-            expr, a = tsq[cfg]
-            l = lang or "xx"
-            score = (f"emb_{l} <&> bm25_catalog.to_bm25query('{self.table}_vc_{l}', "
-                     f"tokenizer_catalog.tokenize(%s, '{self.table}_tok_{l}'))")
-            parts.append(f"(SELECT id, {score} AS s FROM {self.table} "
-                         f"WHERE {lang_cond(lang)} AND tsv @@ {expr} AND {fsql} "
-                         f"ORDER BY s LIMIT {k})")
-            args += [terms] + a + fargs
-        sql = f"SELECT id FROM ({' UNION ALL '.join(parts)}) t ORDER BY s, id LIMIT {k}"
-        return sql, args
-
-
 # ----------------------------------------------------------- Elasticsearch
 
 class Elastic(Engine):
@@ -370,5 +337,4 @@ class Elastic(Engine):
 
 
 ENGINES = {e.name: e for e in (PgIlike, PgTrgm, PgFts, PgFtsNorm, PgSearch, PgSearchNoBoost,
-                                PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, PgVchord,
-                                Elastic)}
+                                PgTextsearch, PgTextsearchTuned, PgTextsearchTitle, Elastic)}

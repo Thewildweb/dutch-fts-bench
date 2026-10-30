@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One full benchmark pass for the arms in one Postgres container.
-# Usage: scripts/postgres-pass.sh <subset> <arm>...   e.g. scripts/postgres-pass.sh full pg-fts pg-search
+# One full benchmark pass for the arms of one running engine container.
+# Usage: scripts/pass.sh <subset> <arm>...   e.g. scripts/pass.sh full pg-fts pg-search
 # The container must be up with the needed index arms built (see README). Writing the result
 # lists first also warms the caches, so the latency runs that follow are labelled "warm".
 set -euo pipefail
