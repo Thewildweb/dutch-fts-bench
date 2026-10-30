@@ -35,8 +35,10 @@ Grades:
 0 = no match: the search words only appear in passing (company description, other
     vacancies, recruiter or benefits text), or this is a different kind of job.
 
-First write one short sentence saying what this job is. Then, on the last line, write
-"Grade: " followed by 0, 1 or 2."""
+Answer with the grade only: one digit, 0, 1 or 2."""
+# Prompt version, stored with each grade. v2 asked for a one-line reason before the grade;
+# v3 (digit only) agreed with it on 115 of 120 pairs and is ~20x faster on shared GPUs.
+PROMPT_VERSION = "v3"
 
 
 def load_qrels() -> dict[tuple[str, str], int]:
@@ -73,15 +75,15 @@ def grade(client: httpx.Client, q: dict, doc: dict) -> int:
     prompt = PROMPT.format(query=q["text"], filters=filters, title=doc["title"],
                            city=doc["city"] or "-", text=doc["text"][:2500])
     r = client.post("/chat/completions", json={
-        "model": config.JUDGE_MODEL, "temperature": 0, "max_tokens": 120,
+        "model": config.JUDGE_MODEL, "temperature": 0, "max_tokens": 3,
         "messages": [{"role": "user", "content": prompt}],
         "chat_template_kwargs": {"enable_thinking": False}})
     r.raise_for_status()
     content = r.json()["choices"][0]["message"]["content"]
-    m = re.findall(r"Grade:\s*\**\s*([012])", content)
+    m = re.search(r"[012]", content)
     if not m:
         raise ValueError(f"unparseable grade: {content!r}")
-    return int(m[-1])
+    return int(m.group())
 
 
 def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
@@ -113,7 +115,8 @@ def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
                 print(f"  failed {qid} {i}: {exc!r}"[:200], flush=True)
                 continue
             with lock:
-                f.write(json.dumps({"qid": qid, "id": i, "grade": g, "by": config.JUDGE_MODEL}) + "\n")
+                f.write(json.dumps({"qid": qid, "id": i, "grade": g, "by": config.JUDGE_MODEL,
+                                    "prompt": PROMPT_VERSION}) + "\n")
                 f.flush()
             if n % 100 == 0:
                 print(f"  graded {n}/{len(todo)}", flush=True)

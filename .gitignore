@@ -9,4 +9,4 @@ logs/
 # is final (remove these lines then).
 results/*.csv
 results/runs/
-judgments/qrels.jsonl
+judgments/*.jsonl
