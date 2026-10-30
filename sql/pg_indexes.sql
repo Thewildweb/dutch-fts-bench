@@ -64,3 +64,9 @@ CREATE INDEX IF NOT EXISTS {table}_bm25t_en ON {table} USING bm25
 CREATE INDEX IF NOT EXISTS {table}_bm25t_xx ON {table} USING bm25
     ((CASE WHEN lang NOT IN ('nl', 'en') THEN title || E'\n' || title || E'\n' || job_text END)) WITH (text_config = 'simple');
 
+
+-- @arm bm25_nomutable
+-- pg_search tuning for live inserts: write new rows straight into immutable segments.
+-- With the default mutable segment, ~400 inserts made top-10 queries ~9x slower
+-- (p50 9.5 -> 84 ms) until the index was cleaned up. Revert with RESET (mutable_segment_rows).
+ALTER INDEX {table}_bm25 SET (mutable_segment_rows = 0);

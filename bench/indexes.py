@@ -8,7 +8,7 @@ import psycopg
 
 from . import config, dataset, results
 
-PG_ARMS = ("trgm", "tsv", "fts", "bm25", "textsearch", "textsearch_title")
+PG_ARMS = ("trgm", "tsv", "fts", "bm25", "bm25_nomutable", "textsearch", "textsearch_title")
 
 
 def _arm_sql(arm: str, table: str) -> str:
@@ -48,10 +48,12 @@ def build_pg(arm: str, subset: str) -> dict:
 def drop_pg(arm: str, subset: str) -> None:
     table = config.table_name(subset)
     names = {"trgm": [f"{table}_title_trgm", f"{table}_text_trgm"],
-             "tsv": [], "fts": [f"{table}_tsv"], "bm25": [f"{table}_bm25"],
+             "tsv": [], "fts": [f"{table}_tsv"], "bm25": [f"{table}_bm25"], "bm25_nomutable": [],
              "textsearch": [f"{table}_bm25_{l}" for l in ("nl", "en", "xx")],
              "textsearch_title": [f"{table}_bm25t_{l}" for l in ("nl", "en", "xx")]}[arm]
     with psycopg.connect(config.PG_DSN, autocommit=True) as conn:
+        if arm == "bm25_nomutable":  # a setting, not an index: drop = back to the default
+            conn.execute(f"ALTER INDEX IF EXISTS {table}_bm25 RESET (mutable_segment_rows)")
         for n in names:
             conn.execute(f"DROP INDEX IF EXISTS {n}")
         if arm == "tsv":
