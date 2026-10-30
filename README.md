@@ -86,7 +86,8 @@ the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` a
 - `--writes 20` (with `--rate`): copy 20 random documents per second under new ids during
   the run, so refreshes invalidate caches as they would with live data. Copies are removed afterwards.
 - `--facets`: time a city facet count instead of a top-k search.
-- Cold runs: restart the engine, drop the OS page cache, run with `--repeats 1 --label cold`.
+- Cold runs: `scripts/cold-run.sh full postgres pg-search` restarts the container with an empty
+  OS page cache and runs each query once (needs a sudoers rule for `drop_caches`, see the script).
 
 Results are appended to `results/index.csv`, `results/latency.csv` and `results/relevance.csv`,
 tagged with host and timestamp.
