@@ -9,6 +9,7 @@ Two modes:
 """
 import json
 import multiprocessing as mp
+import subprocess
 import random
 import statistics
 import time
@@ -86,6 +87,27 @@ def _worker(args) -> tuple[list[float], list[str], float, float]:
     return lat, errors, first, end
 
 
+LOADGEN = config.ROOT / "loadgen" / "bin" / "loadgen"
+
+
+def _go_clients(engine, subset, cache, k, facets, jobs, concurrency, rate, start_at):
+    """Replay the same requests with the Go load generator; returns latencies like _worker."""
+    if not LOADGEN.exists():
+        raise SystemExit("loadgen not built: scripts/build-loadgen.sh")
+    e = ENGINES[engine](subset, cache=cache)
+    lines = [json.dumps(e.session())]
+    lines += [json.dumps(e.request(parse(q["text"]), q["filters"], k, facets)) for _, q in jobs]
+    e.close()
+    cmd = [str(LOADGEN), "-concurrency", str(concurrency), "-start-at", f"{start_at:.6f}"]
+    if rate:
+        cmd += ["-rate", str(rate)]
+    out = subprocess.run(cmd, input="\n".join(lines) + "\n", capture_output=True, text=True)
+    if out.returncode:
+        raise RuntimeError(f"loadgen failed: {out.stderr.strip()}")
+    r = json.loads(out.stdout)
+    return r["lat_ms"], r["errors"], r["first"], r["end"]
+
+
 def _writer(args) -> int:
     """Copy random documents under new ids at `rate` per second until `stop_at`."""
     engine, subset, rate, t0, stop_at = args
@@ -125,9 +147,11 @@ def _jobs(qs: list[dict], repeats: int, zipf: float | None, seed: int = 42) -> l
 def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, label: str,
             profile: str | None = None, facets: bool = False, rate: float | None = None,
             zipf: float | None = None, cache: bool = False,
-            writes: float | None = None) -> list[dict]:
+            writes: float | None = None, client: str = "go") -> list[dict]:
     """writes: documents copied per second during the run (needs --rate, so the run length
-    is known); copies are removed afterwards."""
+    is known); copies are removed afterwards. client: "go" (loadgen/, default) or "python"
+    (one process per client). Both send the same requests; the Python clients used up to
+    10 of 12 cores at 16 clients and added ~2 ms per Elasticsearch request."""
     if writes and not rate:
         raise SystemExit("--writes needs --rate, so the run has a known length")
     rows = []
@@ -145,12 +169,19 @@ def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, la
                  for i in range(concurrency)]
         run_name = f"{engine}__{subset}__{time.strftime('%Y%m%dT%H%M%S')}__{prof}"
         with telemetry.Sampler(telemetry.service_of(engine), run_name) as tel, \
-                mp.get_context("spawn").Pool(concurrency + (1 if writes else 0)) as pool:
+                mp.get_context("spawn").Pool(
+                    max(1, (concurrency if client == "python" else 0) + (1 if writes else 0))) as pool:
             writer = None
             if writes:
                 stop_at = t0 + len(jobs) * interval
                 writer = pool.apply_async(_writer, [(engine, subset, writes, t0, stop_at)])
-            out = pool.map(_worker, parts)
+            if client == "go":
+                # Go's clock is wall time: map the perf_counter start to it.
+                start_at = time.time() + (t0 - time.perf_counter())
+                out = [_go_clients(engine, subset, cache, k, facets, jobs, concurrency, rate,
+                                   start_at)]
+            else:
+                out = pool.map(_worker, parts)
             written = writer.get() if writer else 0
         if writes:
             cleanup = ENGINES[engine](subset)
@@ -161,6 +192,7 @@ def latency(engine: str, subset: str, k: int, concurrency: int, repeats: int, la
         errors = [x for o in out for x in o[1]]
         row = {"engine": engine, "subset": subset, "profile": prof,
                "op": "facet_city" if facets else f"top{k}", "concurrency": concurrency,
+               "client": client,
                "mode": f"open@{rate}/s" if rate else "closed",
                "zipf": zipf or "", "cache": cache, "writes_per_s": writes or "",
                "written": written if writes else "", "label": label,

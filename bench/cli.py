@@ -32,6 +32,8 @@ def main() -> None:
     s.add_argument("--zipf", type=float, help="skewed query popularity, e.g. 1.0 (default: uniform)")
     s.add_argument("--cache", action="store_true", help="engine default caching (ES shard request cache for counts/facets)")
     s.add_argument("--writes", type=float, help="copy N docs/s during the run (needs --rate)")
+    s.add_argument("--client", choices=["go", "python"], default="go",
+                   help="load generator (go: build it once with scripts/build-loadgen.sh)")
     s = sub.add_parser("judge", help="LLM-grade the pooled top-20s")
     s.add_argument("--limit", type=int)
     s.add_argument("--workers", type=int, default=1, help="parallel requests to the grader")
@@ -65,7 +67,8 @@ def main() -> None:
     elif a.cmd == "latency":
         for c in a.concurrency:
             for r in run.latency(a.engine, a.subset, a.k, c, a.repeats, a.label,
-                                 a.profile, a.facets, a.rate, a.zipf, a.cache, a.writes):
+                                 a.profile, a.facets, a.rate, a.zipf, a.cache, a.writes,
+                                 a.client):
                 print(r)
     elif a.cmd == "judge":
         print("graded", judge.judge(a.subset, a.limit, a.workers))

@@ -81,6 +81,13 @@ the same stemmer + stopword list in pg_search, Elasticsearch `dutch`/`english` a
 
 ### Latency modes
 
+Requests are rendered in Python (one definition per engine, shared with the relevance runs)
+and replayed by a small Go load generator (`loadgen/`, build once with
+`scripts/build-loadgen.sh`, needs only Docker). The earlier Python clients used up to 10 of
+12 cores at 16 clients and added ~2 ms per Elasticsearch request; `--client python` keeps
+them for comparison. Run on a machine with the CPU governor on `performance`: with
+`powersave`, a 3 ms pg_search query took 10 ms after any idle gap of 5 ms or more.
+
 - default: closed loop, one OS process per client (`--concurrency 1 4 16`).
 - `--rate 200`: open loop at a fixed rate; queueing delay counts, so stalls show in p99.
 - `--cache`: Elasticsearch's default caching (the shard request cache serves counts and

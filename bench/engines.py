@@ -14,6 +14,13 @@ TITLE_BOOST = 2.0
 LANGS = (("nl", "dutch"), ("en", "english"), (None, "simple"))  # None = every other lang
 
 
+def _numbered(sql: str) -> str:
+    """psycopg placeholders (%s, %% for a literal %) to Postgres-native $1, $2, ..."""
+    parts = sql.replace("%%", "\0").split("%s")
+    return "".join(p + (f"${i}" if i < len(parts) else "")
+                   for i, p in enumerate(parts, 1)).replace("\0", "%")
+
+
 def lang_cond(lang: str | None) -> str:
     return f"lang = '{lang}'" if lang else "lang NOT IN ('nl', 'en')"
 
@@ -38,6 +45,14 @@ class Engine:
     def facet_city(self, q: Query, filters: dict, n: int = 10) -> list[tuple[str, int]]:
         raise NotImplementedError
 
+    def request(self, q: Query, filters: dict, k: int, facets: bool = False) -> dict:
+        """The exact request search()/facet_city() send, for the Go load generator."""
+        raise NotImplementedError
+
+    def session(self) -> dict:
+        """Connection settings for the Go load generator."""
+        raise NotImplementedError
+
     # Write load for cache runs: copy an existing document under a new id ("w-..."), then
     # remove all copies afterwards so the next run sees the original dataset.
     def write_copy(self, src_id: str, new_id: str) -> None:
@@ -56,6 +71,11 @@ class _Pg(Engine):
     def __init__(self, subset: str, cache: bool = False):
         super().__init__(subset, cache)
         self.conn = psycopg.connect(config.PG_DSN, autocommit=True)
+        self.setup: list[str] = []  # per-connection settings, replayed by the Go client
+
+    def _set(self, sql: str) -> None:
+        self.setup.append(sql)
+        self.conn.execute(sql)
 
     def close(self) -> None:
         self.conn.close()
@@ -87,12 +107,22 @@ class _Pg(Engine):
         return self.conn.execute(f"SELECT count(*) FROM {self.table} WHERE {where} AND {fsql}",
                                  args + fargs).fetchone()[0]
 
-    def facet_city(self, q, filters, n=10):
+    def _facet(self, q, filters, n=10):
         where, args = self._where(q)
         fsql, fargs = self._filters(filters)
         sql = (f"SELECT city, count(*) FROM {self.table} WHERE {where} AND {fsql} AND city <> '' "
                f"GROUP BY city ORDER BY 2 DESC LIMIT {n}")
-        return [tuple(r) for r in self.conn.execute(sql, args + fargs)]
+        return sql, args + fargs
+
+    def facet_city(self, q, filters, n=10):
+        return [tuple(r) for r in self.conn.execute(*self._facet(q, filters, n))]
+
+    def request(self, q, filters, k, facets=False):
+        sql, args = self._facet(q, filters) if facets else self._rows(q, filters, k)
+        return {"sql": _numbered(sql), "args": [str(a) for a in args]}
+
+    def session(self):
+        return {"kind": "pg", "dsn": config.PG_DSN, "setup": self.setup}
 
     _COLS = ("url, domain, title, lang, job_text, text_length, word_count, city, "
              "first_seen, last_seen")
@@ -121,8 +151,8 @@ class PgIlike(_Pg):
     def __init__(self, subset: str, cache: bool = False):
         super().__init__(subset, cache)
         if not self.use_indexes:
-            self.conn.execute("SET enable_bitmapscan = off")
-            self.conn.execute("SET enable_indexscan = off")
+            self._set("SET enable_bitmapscan = off")
+            self._set("SET enable_indexscan = off")
 
     @staticmethod
     def _pattern(c: Clause) -> str:
@@ -266,7 +296,7 @@ class PgTextsearchTuned(PgTextsearch):
 
     def __init__(self, subset: str, cache: bool = False):
         super().__init__(subset, cache)
-        self.conn.execute("SET enable_sort = off")
+        self._set("SET enable_sort = off")
 
 
 class PgTextsearchTitle(PgTextsearchTuned):
@@ -326,10 +356,23 @@ class Elastic(Engine):
         r.raise_for_status()
         return r.json()
 
-    def search(self, q, filters, k):
-        body = {"query": self._query(q, filters), "size": k, "_source": False,
+    def _search_body(self, q, filters, k):
+        return {"query": self._query(q, filters), "size": k, "_source": False,
                 "track_total_hits": False, "sort": ["_score", {"id": "asc"}]}
-        return [h["_id"] for h in self._search(body)["hits"]["hits"]]
+
+    def _facet_body(self, q, filters, n=10):
+        return {"query": self._query(q, filters), "size": 0, "track_total_hits": False,
+                "aggs": {"city": {"terms": {"field": "city", "size": n, "exclude": [""]}}}}
+
+    def search(self, q, filters, k):
+        return [h["_id"] for h in self._search(self._search_body(q, filters, k))["hits"]["hits"]]
+
+    def request(self, q, filters, k, facets=False):
+        body = self._facet_body(q, filters) if facets else self._search_body(q, filters, k)
+        return {"path": f"/{self.index}/_search", "params": self.params, "body": body}
+
+    def session(self):
+        return {"kind": "es", "url": config.ES_URL}
 
     def count(self, q, filters):
         body = {"query": self._query(q, filters), "size": 0, "track_total_hits": True}
@@ -349,8 +392,7 @@ class Elastic(Engine):
         return r.json()["deleted"]
 
     def facet_city(self, q, filters, n=10):
-        body = {"query": self._query(q, filters), "size": 0, "track_total_hits": False,
-                "aggs": {"city": {"terms": {"field": "city", "size": n, "exclude": [""]}}}}
+        body = self._facet_body(q, filters, n)
         return [(b["key"], b["doc_count"]) for b in self._search(body)["aggregations"]["city"]["buckets"]]
 
 

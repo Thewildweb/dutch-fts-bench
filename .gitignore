@@ -11,3 +11,4 @@ results/*.csv
 results/runs/
 judgments/*.jsonl
 results/telemetry/
+loadgen/bin/
