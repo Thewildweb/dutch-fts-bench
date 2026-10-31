@@ -217,6 +217,8 @@ def _measure_under(engine: str, subset: str, env: dict, label: str, facets: bool
     try:
         cold_start(service, env)
         latency(engine, subset, 10, 1, 1, label=f"{label} warmup")
+        if facets:
+            latency(engine, subset, 10, 1, 1, label=f"{label} warmup", facets=True)
         latency(engine, subset, 10, 1, 3, label=label)
         latency(engine, subset, 10, 16, 10, label=label, profile="website", rate=100)
         if facets:

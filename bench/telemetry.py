@@ -12,7 +12,6 @@ import os
 import subprocess
 import threading
 import time
-from functools import cache
 from pathlib import Path
 
 from . import config
@@ -36,8 +35,8 @@ def service_of(engine: str) -> str:
     return "pg-textsearch" if engine.startswith("pg-textsearch") else "postgres"
 
 
-@cache
 def container_cgroup(service: str) -> str | None:
+    # Not cached: memory runs recreate the container, which gives it a new id.
     try:
         cid = subprocess.run(["docker", "compose", "ps", "-q", "--no-trunc", service],
                              cwd=config.ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
