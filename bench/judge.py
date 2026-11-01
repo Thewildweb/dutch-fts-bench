@@ -24,7 +24,7 @@ Search: {query}
 Job posting
 Title: {title}
 City: {city}
-Text (truncated):
+{text_label}
 {text}
 
 Grades:
@@ -38,16 +38,21 @@ Grades:
 Answer with the grade only: one digit, 0, 1 or 2."""
 # Prompt version, stored with each grade. v2 asked for a one-line reason before the grade;
 # v3 (digit only) agreed with it on 115 of 120 pairs and is ~20x faster on shared GPUs.
-PROMPT_VERSION = "v3"
+# v4 shows the whole ad (up to TEXT_CHARS): v3 cut it at 2,500 characters, and in 7 of 20
+# calibration pairs a search word only appeared after that, so the grader never saw it.
+PROMPT_VERSION = "v4"
+TEXT_CHARS = 10_000  # ~3k tokens; the grader servers allow 6,144 per request
 
 
-def load_qrels() -> dict[tuple[str, str], int]:
+def load_qrels(version: str | None = None) -> dict[tuple[str, str], int]:
+    """Latest grade per (query, doc); with version, only grades from that prompt version."""
     if not QRELS.exists():
         return {}
     out = {}
     for line in QRELS.read_text().splitlines():
         r = json.loads(line)
-        out[(r["qid"], r["id"])] = r["grade"]
+        if version is None or r.get("prompt") == version:
+            out[(r["qid"], r["id"])] = r["grade"]
     return out
 
 
@@ -72,8 +77,10 @@ def _docs(ids: set[str]) -> dict[str, dict]:
 
 def grade(client: httpx.Client, q: dict, doc: dict) -> int:
     filters = ("Filters applied: " + json.dumps(q["filters"], ensure_ascii=False) + "\n") if q["filters"] else ""
+    text = doc["text"] or ""
+    label = "Text (truncated):" if len(text) > TEXT_CHARS else "Text:"
     prompt = PROMPT.format(query=q["text"], filters=filters, title=doc["title"],
-                           city=doc["city"] or "-", text=doc["text"][:2500])
+                           city=doc["city"] or "-", text_label=label, text=text[:TEXT_CHARS])
     r = client.post("/chat/completions", json={
         "model": config.JUDGE_MODEL, "temperature": 0, "max_tokens": 3,
         "messages": [{"role": "user", "content": prompt}],
@@ -92,7 +99,7 @@ def judge(subset: str, limit: int | None = None, workers: int = 1) -> int:
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
     queries = {q["qid"]: q for q in load_queries()}
-    done = load_qrels()
+    done = load_qrels(PROMPT_VERSION)  # a new prompt version regrades everything
     todo = [(qid, i) for qid, ids in sorted(pool(subset).items()) for i in sorted(ids)
             if (qid, i) not in done]
     todo = todo[:limit] if limit else todo
